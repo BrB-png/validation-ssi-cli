@@ -6,15 +6,19 @@ from config import Config
 from database import Database
 from logger import setup_logger
 from engine.hash import FileHasher
+from engine.signature import SignatureChecker
+
 
 logger = setup_logger(__name__)
 db = Database()
+
 
 def generate_validation_id():
     """Generate unique validation ID"""
     timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
     unique_id = str(uuid.uuid4())[:8]
     return f"VAL-{timestamp}-{unique_id}"
+
 
 @click.group()
 def cli():
@@ -24,6 +28,7 @@ def cli():
     Validates Windows .exe files for security, integrity, and vulnerabilities.
     """
     pass
+
 
 @cli.command()
 @click.option('--exe-path', required=True, type=click.Path(exists=True), 
@@ -81,6 +86,61 @@ def validate(exe_path, software, version):
         logger.error(f"Validation error: {e}")
         click.echo(f"❌ Error: {e}")
 
+
+@cli.command()
+@click.option('--exe-path', required=True, type=click.Path(exists=True), 
+              help='Path to the .exe file to check')
+def signature(exe_path):
+    """
+    Check digital signature of an executable file
+    
+    Example: signature --exe-path "C:\\path\\to\\file.exe"
+    """
+    try:
+        click.echo(f"\n{'='*60}")
+        click.echo(f"Signature Check")
+        click.echo(f"File: {exe_path}")
+        click.echo(f"{'='*60}\n")
+        
+        # Get signature info
+        sig_info = SignatureChecker.get_signature_info(exe_path)
+        
+        if sig_info is None:
+            click.echo("❌ No signature information found\n")
+            return
+        
+        # Display results
+        click.echo(f"Status: {sig_info.get('Status', 'Unknown')}")
+        click.echo(f"Signer: {sig_info.get('SignerCertificate', 'Not signed')}")
+        click.echo(f"Issuer: {sig_info.get('Issuer', 'N/A')}")
+        click.echo(f"Thumbprint: {sig_info.get('Thumbprint', 'N/A')}")
+        click.echo(f"Valid From: {sig_info.get('NotBefore', 'N/A')}")
+        click.echo(f"Valid Until: {sig_info.get('NotAfter', 'N/A')}")
+        click.echo(f"TimeStamper: {sig_info.get('TimeStamperCertificate', 'N/A')}\n")
+        
+        # Check validity
+        is_signed = SignatureChecker.is_signed(exe_path)
+        is_valid = SignatureChecker.is_certificate_valid(exe_path)
+        
+        if is_signed:
+            click.echo("✅ File is properly signed")
+        else:
+            click.echo("❌ File is not signed or signature is invalid")
+        
+        if is_valid:
+            click.echo("✅ Certificate is valid")
+        else:
+            click.echo("⚠️ Certificate is expired or invalid")
+        
+        click.echo(f"{'='*60}\n")
+        
+        logger.info(f"Signature check completed for {exe_path}")
+        
+    except Exception as e:
+        logger.error(f"Signature check error: {e}")
+        click.echo(f"❌ Error: {e}")
+
+
 @cli.command()
 @click.option('--limit', default=10, help='Number of validations to show')
 def history(limit):
@@ -112,6 +172,7 @@ def history(limit):
     except Exception as e:
         logger.error(f"History error: {e}")
         click.echo(f"❌ Error: {e}")
+
 
 @cli.command()
 @click.option('--validation-id', required=True, help='Validation ID to retrieve')
@@ -150,6 +211,7 @@ def details(validation_id):
     except Exception as e:
         logger.error(f"Details error: {e}")
         click.echo(f"❌ Error: {e}")
+
 
 if __name__ == '__main__':
     cli()
