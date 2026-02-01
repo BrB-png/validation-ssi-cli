@@ -8,6 +8,7 @@ from logger import setup_logger
 from engine.hash import FileHasher
 from engine.signature import SignatureChecker
 from engine.virustotal import VirusTotalChecker
+from engine.cve import CVEChecker
 
 
 logger = setup_logger(__name__)
@@ -215,6 +216,82 @@ def virustotal(exe_path, file_hash):
         
     except Exception as e:
         logger.error(f"VirusTotal scan error: {e}")
+        click.echo(f"❌ Error: {e}")
+
+
+@cli.command()
+@click.option('--software', required=True, help='Software name to search')
+@click.option('--version', default=None, help='Software version (optional)')
+@click.option('--cve-id', default=None, help='Specific CVE ID to lookup')
+def cve(software, version, cve_id):
+    """
+    Search for CVE vulnerabilities
+    
+    Example: cve --software "7-Zip" --version "25.01"
+    Example: cve --cve-id "CVE-2021-12345"
+    """
+    try:
+        click.echo(f"\n{'='*60}")
+        click.echo(f"CVE/Vulnerability Search")
+        click.echo(f"{'='*60}\n")
+        
+        # If specific CVE ID provided, get details
+        if cve_id:
+            click.echo(f"Searching for CVE: {cve_id}\n")
+            cve_details = CVEChecker.get_cve_by_id(cve_id)
+            
+            if cve_details is None:
+                click.echo("❌ CVE not found\n")
+                return
+            
+            click.echo(f"CVE ID: {cve_details.get('cve_id')}")
+            click.echo(f"Severity: {cve_details.get('severity')}")
+            click.echo(f"CVSS Score: {cve_details.get('cvss_score')}")
+            click.echo(f"Published: {cve_details.get('published_date')}")
+            click.echo(f"Description: {cve_details.get('description')}\n")
+            
+        else:
+            # Search by software name
+            search_term = software
+            if version:
+                search_term = f"{software} {version}"
+            
+            click.echo(f"Searching for: {search_term}\n")
+            cve_results = CVEChecker.search_cve_by_software(software, version)
+            
+            if cve_results.get('error'):
+                click.echo(f"⚠️ Error: {cve_results.get('error')}\n")
+                return
+            
+            if not cve_results.get('found'):
+                click.echo("✅ No CVE vulnerabilities found\n")
+            else:
+                click.echo(f"Found {cve_results.get('count')} CVE(s):\n")
+                
+                for cve in cve_results.get('cves', []):
+                    click.echo(f"CVE: {cve.get('cve_id')}")
+                    click.echo(f"Severity: {cve.get('severity')}")
+                    click.echo(f"Description: {cve.get('description')[:100]}...\n")
+                
+                # Calculate score
+                critical_count = len([c for c in cve_results.get('cves', []) if 'CRITICAL' in c.get('severity', '')])
+                high_count = len([c for c in cve_results.get('cves', []) if 'HIGH' in c.get('severity', '')])
+                
+                score_info = CVEChecker.calculate_cve_score(
+                    cve_results.get('count', 0),
+                    critical_count,
+                    high_count
+                )
+                
+                click.echo(f"Verdict: {score_info['verdict']}")
+                click.echo(f"Score: {score_info['score']}/30")
+                click.echo(f"Confidence: {score_info['confidence']}\n")
+        
+        click.echo(f"{'='*60}\n")
+        logger.info(f"CVE search completed for {software}")
+        
+    except Exception as e:
+        logger.error(f"CVE search error: {e}")
         click.echo(f"❌ Error: {e}")
 
 
