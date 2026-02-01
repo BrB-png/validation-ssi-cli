@@ -9,6 +9,7 @@ from engine.hash import FileHasher
 from engine.signature import SignatureChecker
 from engine.virustotal import VirusTotalChecker
 from engine.cve import CVEChecker
+from engine.scoring import ScoringEngine
 
 
 logger = setup_logger(__name__)
@@ -296,6 +297,82 @@ def cve(software, version, cve_id):
 
 
 @cli.command()
+@click.option('--hash-value', default=None, help='SHA256 hash')
+@click.option('--signer', default=None, help='File signer name')
+@click.option('--is-signed', is_flag=True, help='File is digitally signed')
+@click.option('--cert-valid', is_flag=True, help='Certificate is valid')
+@click.option('--is-latest', is_flag=True, help='Version is latest')
+@click.option('--is-supported', is_flag=True, help='Version is supported')
+@click.option('--cve-count', default=0, type=int, help='Number of CVEs found')
+@click.option('--critical-count', default=0, type=int, help='Number of critical CVEs')
+@click.option('--high-count', default=0, type=int, help='Number of high severity CVEs')
+@click.option('--detection-count', default=0, type=int, help='Number of VirusTotal detections')
+@click.option('--total-engines', default=70, type=int, help='Total VirusTotal engines')
+def score(hash_value, signer, is_signed, cert_valid, is_latest, is_supported,
+          cve_count, critical_count, high_count, detection_count, total_engines):
+    """
+    Calculate validation score based on analysis results
+    
+    Example: score --hash-value "abc123..." --signer "Microsoft" --is-signed --cert-valid
+    """
+    try:
+        click.echo(f"\n{'='*70}")
+        click.echo(f"Validation Score Report")
+        click.echo(f"{'='*70}\n")
+        
+        # Generate score report
+        report = ScoringEngine.generate_score_report(
+            hash_value=hash_value,
+            signer_name=signer,
+            is_signed=is_signed,
+            cert_valid=cert_valid,
+            is_latest=is_latest,
+            is_supported=is_supported,
+            cve_count=cve_count,
+            critical_count=critical_count,
+            high_count=high_count,
+            detection_count=detection_count,
+            total_engines=total_engines
+        )
+        
+        # Display section scores
+        click.echo("📊 SECTION SCORES\n")
+        
+        sections = report['sections']
+        for section_name, section_data in sections.items():
+            score_val = section_data['score']
+            max_val = section_data['max']
+            percentage = section_data['percentage']
+            
+            click.echo(f"{section_name.upper():<20} {score_val:>3}/{max_val:<3} ({percentage:>6.1f}%)")
+        
+        # Display total score
+        total_data = report['total']
+        total_score = total_data['score']
+        total_max = total_data['max']
+        total_percentage = total_data['percentage']
+        
+        click.echo(f"\n{'─'*70}")
+        click.echo(f"{'TOTAL':<20} {total_score:>3}/{total_max:<3} ({total_percentage:>6.1f}%)")
+        click.echo(f"{'─'*70}\n")
+        
+        # Display verdict
+        verdict = report['verdict']
+        click.echo(f"{verdict['status']}")
+        click.echo(f"Score: {verdict['score']}/200")
+        click.echo(f"Percentage: {verdict['percentage']}%")
+        click.echo(f"\nRecommendation: {verdict['recommendation']}\n")
+        
+        click.echo(f"{'='*70}\n")
+        
+        logger.info(f"Scoring report generated with verdict: {verdict['verdict']}")
+        
+    except Exception as e:
+        logger.error(f"Scoring error: {e}")
+        click.echo(f"❌ Error: {e}")
+
+
+@cli.command()
 @click.option('--limit', default=10, help='Number of validations to show')
 def history(limit):
     """
@@ -369,3 +446,4 @@ def details(validation_id):
 
 if __name__ == '__main__':
     cli()
+
