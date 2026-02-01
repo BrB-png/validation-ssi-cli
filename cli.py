@@ -7,6 +7,7 @@ from database import Database
 from logger import setup_logger
 from engine.hash import FileHasher
 from engine.signature import SignatureChecker
+from engine.virustotal import VirusTotalChecker
 
 
 logger = setup_logger(__name__)
@@ -138,6 +139,82 @@ def signature(exe_path):
         
     except Exception as e:
         logger.error(f"Signature check error: {e}")
+        click.echo(f"❌ Error: {e}")
+
+
+@cli.command()
+@click.option('--exe-path', required=True, type=click.Path(exists=True), 
+              help='Path to the .exe file to scan')
+@click.option('--file-hash', default=None,
+              help='SHA256 hash (if not provided, will be calculated)')
+def virustotal(exe_path, file_hash):
+    """
+    Scan file on VirusTotal
+    
+    Example: virustotal --exe-path "C:\\path\\to\\file.exe"
+    """
+    try:
+        # Check if API key is configured
+        if not VirusTotalChecker.is_api_configured():
+            click.echo("\n❌ VirusTotal API key not configured")
+            click.echo("Please add VT_API_KEY to .env file\n")
+            logger.warning("VirusTotal API key not configured")
+            return
+        
+        click.echo(f"\n{'='*60}")
+        click.echo(f"VirusTotal Scan")
+        click.echo(f"File: {exe_path}")
+        click.echo(f"{'='*60}\n")
+        
+        # Get or calculate hash
+        if not file_hash:
+            click.echo("📊 Calculating SHA256 hash...")
+            file_hash = FileHasher.calculate_sha256(exe_path)
+            if not file_hash:
+                click.echo("❌ Error calculating hash\n")
+                return
+            click.echo(f"✅ Hash: {file_hash}\n")
+        
+        # Get VirusTotal report
+        click.echo("🔍 Querying VirusTotal...")
+        vt_result = VirusTotalChecker.get_file_report_by_hash(file_hash)
+        
+        if vt_result is None:
+            click.echo("⚠️ File not found in VirusTotal database")
+            click.echo("(File may be new or clean)\n")
+            vt_result = {
+                'detection_count': 0,
+                'total_engines': 0,
+                'verdict': 'UNKNOWN'
+            }
+        
+        # Display results
+        click.echo(f"Detection Count: {vt_result.get('detection_count', 0)}/{vt_result.get('total_engines', 70)}")
+        click.echo(f"Verdict: {vt_result.get('verdict', 'UNKNOWN')}\n")
+        
+        # Get verdict score
+        verdict_info = VirusTotalChecker.get_verdict_score(
+            vt_result.get('detection_count', 0),
+            vt_result.get('total_engines', 70)
+        )
+        
+        click.echo(f"Score: {verdict_info['score']}/30")
+        click.echo(f"Confidence: {verdict_info['confidence']}")
+        
+        # Display status
+        if vt_result.get('detection_count', 0) == 0:
+            click.echo("\n✅ No malware detected")
+        elif vt_result.get('detection_count', 0) <= 3:
+            click.echo("\n⚠️ Low detection rate (possibly false positive)")
+        else:
+            click.echo("\n❌ Multiple engines detected malware")
+        
+        click.echo(f"{'='*60}\n")
+        
+        logger.info(f"VirusTotal scan completed for {exe_path}")
+        
+    except Exception as e:
+        logger.error(f"VirusTotal scan error: {e}")
         click.echo(f"❌ Error: {e}")
 
 
